@@ -268,7 +268,14 @@ This is an alist containing `entries' and `types'."
   (pcase (string-to-char path)
     ('?/ path)
     ('?# (concat (devdocs--path-file base) path))
-    (_ (concat (file-name-directory base) path))))
+    (_
+     (setq base (file-name-directory base))
+     (while (string-prefix-p "../" path)
+       (unless base
+         (error "Path escapes documentation directory: %s" path))
+       (setq path (string-trim-left path (rx "../"))
+             base (file-name-directory (directory-file-name base))))
+     (concat (or base "") path))))
 
 (defun devdocs--render-pre-tag-with-fontification (dom)
   "Insert and fontify pre-tag represented by DOM."
