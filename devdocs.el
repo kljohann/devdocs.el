@@ -34,6 +34,7 @@
 
 ;;; Code:
 
+(require 'org-src)
 (require 'seq)
 (require 'shr)
 (eval-when-compile
@@ -66,6 +67,20 @@
 (defcustom devdocs-separator " » "
   "String used to format a documentation location, e.g. in header line."
   :type 'string)
+
+(defcustom devdocs-language-normalization-alist '(("pycon3" . "python")
+                                                  ("pycon" . "python"))
+  "Alist mapping `data-language' values of `pre' tags to Org language names.
+
+The resulting language name is passed to `org-src-get-lang-mode'
+\(via `org-src-font-lock-fontify-block') in order to fontify the
+corresponding code block.
+
+Before lookup, `data-language' values are converted to lower case.
+If no matching entry is present, the lower-cased value is passed
+on as-is."
+  :type '(repeat (cons (string "`data-language' value")
+                       (string "Org language name"))))
 
 (defvar devdocs--index (make-hash-table :test 'equal)
   "A hash table to cache document indices.
@@ -255,6 +270,22 @@ This is an alist containing `entries' and `types'."
     ('?# (concat (devdocs--path-file base) path))
     (_ (concat (file-name-directory base) path))))
 
+(defun devdocs--render-pre-tag-with-fontification (dom)
+  "Insert and fontify pre-tag represented by DOM."
+  (let ((shr-folding-mode 'none)
+        (shr-current-font 'default)
+        start)
+    (shr-ensure-newline)
+    (setq start (point))
+    (shr-generic dom)
+    (when-let ((lang (dom-attr dom 'data-language)))
+      (setq lang (downcase lang))
+      (org-src-font-lock-fontify-block
+       (alist-get lang devdocs-language-normalization-alist
+                  lang nil 'equal)
+       start (point)))
+    (shr-ensure-newline)))
+
 (defun devdocs--render (entry)
   "Render a DevDocs documentation entry, returning a buffer.
 
@@ -268,6 +299,10 @@ fragment part of ENTRY.path."
       (devdocs-mode))
     (let-alist entry
       (let ((shr-target-id (or .fragment (devdocs--path-fragment .path)))
+            (shr-external-rendering-functions
+             (append
+              shr-external-rendering-functions
+              '((pre . devdocs--render-pre-tag-with-fontification))))
             (buffer-read-only nil)
             (file (expand-file-name (format "%s/%s.html" .doc (url-hexify-string
                                                                (devdocs--path-file .path)))
